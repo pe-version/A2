@@ -9,7 +9,7 @@ class TestAuthentication:
     def test_unauthorized_without_token(self, client):
         """Requests without token should return 401."""
         response = client.get("/sensors")
-        assert response.status_code in (401, 403)
+        assert response.status_code == 401
 
     def test_unauthorized_with_invalid_token(self, client):
         """Requests with invalid token should return 401."""
@@ -18,6 +18,35 @@ class TestAuthentication:
             headers={"Authorization": "Bearer invalid-token"},
         )
         assert response.status_code == 401
+
+    def test_unauthorized_malformed_header(self, client):
+        """Requests with malformed auth header (no Bearer prefix) should return 401."""
+        response = client.get(
+            "/sensors",
+            headers={"Authorization": "Token some-token"},
+        )
+        assert response.status_code == 401
+
+    def test_unauthorized_post(self, client):
+        """POST without token should return 401."""
+        response = client.post("/sensors", json={"name": "test"})
+        assert response.status_code == 401
+
+    def test_unauthorized_put(self, client):
+        """PUT without token should return 401."""
+        response = client.put("/sensors/sensor-001", json={"value": 1})
+        assert response.status_code == 401
+
+    def test_unauthorized_delete(self, client):
+        """DELETE without token should return 401."""
+        response = client.delete("/sensors/sensor-001")
+        assert response.status_code == 401
+
+    def test_unauthorized_response_body(self, client):
+        """401 response should include detail field."""
+        response = client.get("/sensors")
+        data = response.json()
+        assert "detail" in data
 
     def test_authorized_with_valid_token(self, client, auth_headers):
         """Requests with valid token should succeed."""
@@ -180,3 +209,140 @@ class TestSensorCRUD:
         data = response.json()
         assert data["count"] == 3
         assert len(data["sensors"]) == 3
+
+    def test_get_nonexistent_response_body(self, client, auth_headers):
+        """404 response should include detail field with sensor ID."""
+        response = client.get("/sensors/sensor-999", headers=auth_headers)
+        assert response.status_code == 404
+        data = response.json()
+        assert "detail" in data
+        assert "sensor-999" in data["detail"]
+
+    def test_update_nonexistent_sensor(self, client, auth_headers):
+        """Updating a nonexistent sensor should return 404."""
+        response = client.put(
+            "/sensors/nonexistent-id",
+            json={"value": 99.0},
+            headers=auth_headers,
+        )
+        assert response.status_code == 404
+        data = response.json()
+        assert "detail" in data
+
+
+class TestBadPayloads:
+    """Tests for invalid request bodies."""
+
+    def test_create_empty_body(self, client, auth_headers):
+        """Creating a sensor with empty body should return 422."""
+        response = client.post("/sensors", json={}, headers=auth_headers)
+        assert response.status_code == 422
+
+    def test_create_missing_required_fields(self, client, auth_headers):
+        """Creating a sensor with only some fields should return 422."""
+        response = client.post(
+            "/sensors",
+            json={"name": "Partial Sensor"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+
+    def test_create_invalid_type_enum(self, client, auth_headers):
+        """Creating a sensor with invalid type enum should return 422."""
+        sensor = {
+            "name": "Bad Type",
+            "type": "invalid_type",
+            "location": "test",
+            "value": 0,
+            "unit": "fahrenheit",
+            "status": "active",
+        }
+        response = client.post("/sensors", json=sensor, headers=auth_headers)
+        assert response.status_code == 422
+
+    def test_create_invalid_unit_enum(self, client, auth_headers):
+        """Creating a sensor with invalid unit enum should return 422."""
+        sensor = {
+            "name": "Bad Unit",
+            "type": "temperature",
+            "location": "test",
+            "value": 0,
+            "unit": "invalid_unit",
+            "status": "active",
+        }
+        response = client.post("/sensors", json=sensor, headers=auth_headers)
+        assert response.status_code == 422
+
+    def test_create_invalid_status_enum(self, client, auth_headers):
+        """Creating a sensor with invalid status enum should return 422."""
+        sensor = {
+            "name": "Bad Status",
+            "type": "temperature",
+            "location": "test",
+            "value": 0,
+            "unit": "fahrenheit",
+            "status": "broken",
+        }
+        response = client.post("/sensors", json=sensor, headers=auth_headers)
+        assert response.status_code == 422
+
+    def test_create_wrong_value_type(self, client, auth_headers):
+        """Creating a sensor with string value should return 422."""
+        sensor = {
+            "name": "Bad Value",
+            "type": "temperature",
+            "location": "test",
+            "value": "not_a_number",
+            "unit": "fahrenheit",
+            "status": "active",
+        }
+        response = client.post("/sensors", json=sensor, headers=auth_headers)
+        assert response.status_code == 422
+
+    def test_create_empty_name(self, client, auth_headers):
+        """Creating a sensor with empty name should return 422."""
+        sensor = {
+            "name": "",
+            "type": "temperature",
+            "location": "test",
+            "value": 0,
+            "unit": "fahrenheit",
+            "status": "active",
+        }
+        response = client.post("/sensors", json=sensor, headers=auth_headers)
+        assert response.status_code == 422
+
+    def test_create_empty_location(self, client, auth_headers):
+        """Creating a sensor with empty location should return 422."""
+        sensor = {
+            "name": "No Location",
+            "type": "temperature",
+            "location": "",
+            "value": 0,
+            "unit": "fahrenheit",
+            "status": "active",
+        }
+        response = client.post("/sensors", json=sensor, headers=auth_headers)
+        assert response.status_code == 422
+
+    def test_update_invalid_status_enum(self, client, auth_headers):
+        """Updating a sensor with invalid status should return 422."""
+        # Create valid sensor first
+        sensor = {
+            "name": "Update Target",
+            "type": "temperature",
+            "location": "test",
+            "value": 70.0,
+            "unit": "fahrenheit",
+            "status": "active",
+        }
+        create_resp = client.post("/sensors", json=sensor, headers=auth_headers)
+        sensor_id = create_resp.json()["id"]
+
+        # Update with invalid status
+        response = client.put(
+            f"/sensors/{sensor_id}",
+            json={"status": "broken"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422

@@ -14,7 +14,7 @@ func AuthMiddleware(validToken string) gin.HandlerFunc {
 
 		if authHeader == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": "Authorization header required",
+				"detail": "Not authenticated",
 			})
 			return
 		}
@@ -23,7 +23,7 @@ func AuthMiddleware(validToken string) gin.HandlerFunc {
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": "Invalid authorization format. Use: Bearer <token>",
+				"detail": "Invalid authorization format. Use: Bearer <token>",
 			})
 			return
 		}
@@ -31,7 +31,7 @@ func AuthMiddleware(validToken string) gin.HandlerFunc {
 		token := parts[1]
 		if token != validToken {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": "Invalid or expired token",
+				"detail": "Invalid or expired token",
 			})
 			return
 		}

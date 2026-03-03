@@ -139,6 +139,9 @@ docker-compose up go-service --build
 docker-compose down
 ```
 
+![Services Running](go-and-python-microservices-running.png)
+*Both services running in Docker Compose*
+
 ## Example Requests/Responses
 
 ### Authentication
@@ -275,50 +278,74 @@ go test ./tests/ -v
 
 The architecture diagram below renders natively on GitHub. See [architecture.md](architecture.md) for the ASCII fallback version.
 
-![Services Running](go-and-python-microservices-running.png)
-*Screenshot: Both services running in Docker Compose*
-
 ```mermaid
 flowchart TB
-    subgraph External["External Clients"]
-        Client["HTTP Client<br/>(curl, Postman, etc.)"]
-    end
+    Client["HTTP Client<br/>(curl, Postman, etc.)"]
 
-    subgraph Security["Security Boundary"]
-        subgraph Docker["Docker Compose Network"]
-            subgraph PythonService["Python Service (FastAPI)"]
-                direction TB
-                PAuth["Auth Middleware<br/>Bearer Token Validation"]
-                PLog["Logging Middleware<br/>Correlation ID"]
-                PRouter["Routers<br/>/health, /sensors"]
-                PRepo["Repository Layer"]
-                PAuth --> PLog --> PRouter --> PRepo
-            end
+    subgraph Docker["Docker Compose Network"]
+        subgraph PythonService["Python Service · FastAPI · :8000"]
+            direction TB
+            PAuth["Auth Middleware"]
+            PLog["Logging Middleware"]
+            PRouter["Routers"]
+            PRepo["Repository Layer"]
+            PAuth --> PLog --> PRouter --> PRepo
+        end
 
-            subgraph GoService["Go Service (Gin)"]
-                direction TB
-                GAuth["Auth Middleware<br/>Bearer Token Validation"]
-                GLog["Logging Middleware<br/>Correlation ID"]
-                GHandler["Handlers<br/>/health, /sensors"]
-                GRepo["Repository Layer"]
-                GAuth --> GLog --> GHandler --> GRepo
-            end
+        subgraph GoService["Go Service · Gin · :8080"]
+            direction TB
+            GAuth["Auth Middleware"]
+            GLog["Logging Middleware"]
+            GHandler["Handlers"]
+            GRepo["Repository Layer"]
+            GAuth --> GLog --> GHandler --> GRepo
+        end
 
-            subgraph Storage["Data Storage"]
-                PDB[("SQLite<br/>sensors-python.db")]
-                GDB[("SQLite<br/>sensors-go.db")]
-                Seed["sensors.json<br/>(seed data)"]
-            end
+        subgraph Storage["Data Storage"]
+            PDB[("sensors-python.db")]
+            GDB[("sensors-go.db")]
+            Seed["sensors.json"]
         end
     end
 
-    Client -->|"POST/GET/PUT/DELETE<br/>Authorization: Bearer token<br/>:8000"| PAuth
-    Client -->|"POST/GET/PUT/DELETE<br/>Authorization: Bearer token<br/>:8080"| GAuth
+    Client -->|"Bearer token"| PAuth
+    Client -->|"Bearer token"| GAuth
 
     PRepo --> PDB
     GRepo --> GDB
-    PDB -.->|"seed on startup"| Seed
-    GDB -.->|"seed on startup"| Seed
+    Seed -.->|"seed on startup"| PDB
+    Seed -.->|"seed on startup"| GDB
+```
+
+### Request Flow
+
+The sequence diagram below shows how a typical authenticated request flows through the middleware chain. Both services follow this identical pattern.
+
+```mermaid
+sequenceDiagram
+    actor Client
+    participant Auth as Auth Middleware
+    participant Log as Logging Middleware
+    participant Router as Router / Handler
+    participant Repo as Repository
+    participant DB as SQLite
+
+    Client->>+Auth: GET /sensors<br/>Authorization: Bearer <token>
+    Auth->>Auth: Validate token
+    alt Invalid or missing token
+        Auth-->>Client: 401 Unauthorized
+    end
+    Auth->>+Log: Forward request
+    Log->>Log: Generate correlation ID
+    Log->>+Router: Forward request
+    Router->>+Repo: GetAll()
+    Repo->>+DB: SELECT * FROM sensors
+    DB-->>-Repo: rows
+    Repo-->>-Router: []Sensor
+    Router-->>-Log: 200 OK + JSON
+    Log->>Log: Log request + duration
+    Log-->>-Auth: Response
+    Auth-->>-Client: 200 OK + JSON body
 ```
 
 ---
@@ -732,7 +759,7 @@ The `data/sensors.json` file contains 6 IoT sensors representing a smart home se
 | type | string | Yes | One of: temperature, motion, humidity, light, air_quality, co2, contact, pressure |
 | location | string | Yes | 1-100 characters |
 | value | number | Yes | Any numeric value |
-| unit | string | Yes | 1-50 characters |
+| unit | string | Yes | One of: fahrenheit, celsius, boolean, percent, aqi, ppm, lux, pascal |
 | status | string | Yes | One of: active, inactive, error |
 
 ---

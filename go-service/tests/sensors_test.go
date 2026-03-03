@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -96,6 +97,79 @@ func TestUnauthorizedWithInvalidToken(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("Expected 401, got %d", w.Code)
+	}
+}
+
+func TestUnauthorizedMalformedHeader(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/sensors", nil)
+	req.Header.Set("Authorization", "Token some-token")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected 401, got %d", w.Code)
+	}
+}
+
+func TestUnauthorizedPost(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	body, _ := json.Marshal(map[string]interface{}{"name": "test"})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/sensors", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected 401, got %d", w.Code)
+	}
+}
+
+func TestUnauthorizedPut(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	body, _ := json.Marshal(map[string]interface{}{"value": 1})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("PUT", "/sensors/sensor-001", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected 401, got %d", w.Code)
+	}
+}
+
+func TestUnauthorizedDelete(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("DELETE", "/sensors/sensor-001", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected 401, got %d", w.Code)
+	}
+}
+
+func TestUnauthorizedResponseBody(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/sensors", nil)
+	router.ServeHTTP(w, req)
+
+	var response map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &response)
+
+	if _, ok := response["detail"]; !ok {
+		t.Error("Expected 'detail' field in 401 response body")
 	}
 }
 
@@ -427,5 +501,249 @@ func TestListSensorsAfterCreate(t *testing.T) {
 	sensors := response["sensors"].([]interface{})
 	if len(sensors) != 3 {
 		t.Errorf("Expected 3 sensors, got %d", len(sensors))
+	}
+}
+
+func TestGetNonexistentResponseBody(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/sensors/sensor-999", nil)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected 404, got %d", w.Code)
+	}
+
+	var response map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &response)
+
+	if _, ok := response["detail"]; !ok {
+		t.Error("Expected 'detail' field in 404 response body")
+	}
+	detail := response["detail"].(string)
+	if !strings.Contains(detail, "sensor-999") {
+		t.Errorf("Expected detail to contain 'sensor-999', got '%s'", detail)
+	}
+}
+
+func TestUpdateNonexistentSensor(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	updateData := map[string]interface{}{"value": 99.0}
+	body, _ := json.Marshal(updateData)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("PUT", "/sensors/nonexistent-id", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected 404, got %d", w.Code)
+	}
+
+	var response map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &response)
+
+	if _, ok := response["detail"]; !ok {
+		t.Error("Expected 'detail' field in 404 response body")
+	}
+}
+
+func TestCreateEmptyBody(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/sensors", bytes.NewBuffer([]byte("{}")))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateMissingRequiredFields(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	body, _ := json.Marshal(map[string]interface{}{"name": "Partial Sensor"})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/sensors", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateInvalidTypeEnum(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	sensor := map[string]interface{}{
+		"name": "Bad Type", "type": "invalid_type", "location": "test",
+		"value": 0, "unit": "fahrenheit", "status": "active",
+	}
+	body, _ := json.Marshal(sensor)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/sensors", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateInvalidUnitEnum(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	sensor := map[string]interface{}{
+		"name": "Bad Unit", "type": "temperature", "location": "test",
+		"value": 0, "unit": "invalid_unit", "status": "active",
+	}
+	body, _ := json.Marshal(sensor)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/sensors", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateInvalidStatusEnum(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	sensor := map[string]interface{}{
+		"name": "Bad Status", "type": "temperature", "location": "test",
+		"value": 0, "unit": "fahrenheit", "status": "broken",
+	}
+	body, _ := json.Marshal(sensor)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/sensors", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateWrongValueType(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	sensor := map[string]interface{}{
+		"name": "Bad Value", "type": "temperature", "location": "test",
+		"value": "not_a_number", "unit": "fahrenheit", "status": "active",
+	}
+	body, _ := json.Marshal(sensor)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/sensors", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateEmptyName(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	sensor := map[string]interface{}{
+		"name": "", "type": "temperature", "location": "test",
+		"value": 0, "unit": "fahrenheit", "status": "active",
+	}
+	body, _ := json.Marshal(sensor)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/sensors", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateEmptyLocation(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	sensor := map[string]interface{}{
+		"name": "No Location", "type": "temperature", "location": "",
+		"value": 0, "unit": "fahrenheit", "status": "active",
+	}
+	body, _ := json.Marshal(sensor)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/sensors", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateInvalidStatusEnum(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	// Create valid sensor first
+	sensor := map[string]interface{}{
+		"name": "Update Target", "type": "temperature", "location": "test",
+		"value": 70.0, "unit": "fahrenheit", "status": "active",
+	}
+	body, _ := json.Marshal(sensor)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/sensors", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	var created map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &created)
+	sensorID := created["id"].(string)
+
+	// Update with invalid status
+	updateData := map[string]interface{}{"status": "broken"}
+	body, _ = json.Marshal(updateData)
+
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("PUT", "/sensors/"+sensorID, bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 }

@@ -192,7 +192,9 @@ components:
       properties:
         id:
           type: string
-          description: Unique sensor identifier
+          description: Unique sensor identifier (server-generated, sequential)
+          pattern: "^sensor-\\d{3,}$"
+          readOnly: true
           example: sensor-001
         name:
           type: string
@@ -222,6 +224,15 @@ components:
         unit:
           type: string
           description: Unit of measurement
+          enum:
+            - fahrenheit
+            - celsius
+            - boolean
+            - percent
+            - aqi
+            - ppm
+            - lux
+            - pascal
           example: fahrenheit
         status:
           type: string
@@ -285,8 +296,15 @@ components:
           description: Initial sensor reading value
         unit:
           type: string
-          minLength: 1
-          maxLength: 50
+          enum:
+            - fahrenheit
+            - celsius
+            - boolean
+            - percent
+            - aqi
+            - ppm
+            - lux
+            - pascal
           description: Unit of measurement
         status:
           type: string
@@ -330,8 +348,15 @@ components:
           type: number
         unit:
           type: string
-          minLength: 1
-          maxLength: 50
+          enum:
+            - fahrenheit
+            - celsius
+            - boolean
+            - percent
+            - aqi
+            - ppm
+            - lux
+            - pascal
         status:
           type: string
           enum:
@@ -371,14 +396,13 @@ components:
 
     Error:
       type: object
-      description: Error response
+      description: Error response (RFC 7807 compatible)
       properties:
-        error:
-          type: string
-          description: Error message
         detail:
           type: string
-          description: Additional error details
+          description: Human-readable explanation of the error
+      required:
+        - detail
 
   responses:
     Unauthorized:
@@ -388,7 +412,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            error: Invalid or expired token
+            detail: Invalid or expired token
 
     NotFound:
       description: Resource not found
@@ -397,8 +421,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            error: Sensor not found
-            detail: No sensor with id 'sensor-999'
+            detail: "No sensor with id 'sensor-999'"
 
     BadRequest:
       description: Invalid request
@@ -407,7 +430,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            error: Invalid request body
+            detail: Invalid request body
 
     ValidationError:
       description: Validation error

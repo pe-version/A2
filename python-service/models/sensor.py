@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional, Union
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -20,6 +20,19 @@ class SensorType(str, Enum):
     PRESSURE = "pressure"
 
 
+class SensorUnit(str, Enum):
+    """Valid sensor units of measurement."""
+
+    FAHRENHEIT = "fahrenheit"
+    CELSIUS = "celsius"
+    BOOLEAN = "boolean"
+    PERCENT = "percent"
+    AQI = "aqi"
+    PPM = "ppm"
+    LUX = "lux"
+    PASCAL = "pascal"
+
+
 class SensorStatus(str, Enum):
     """Valid sensor statuses."""
 
@@ -34,8 +47,8 @@ class SensorBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="Sensor display name")
     type: SensorType = Field(..., description="Type of sensor")
     location: str = Field(..., min_length=1, max_length=100, description="Physical location")
-    value: Union[float, int, bool] = Field(..., description="Current sensor value")
-    unit: str = Field(..., min_length=1, max_length=50, description="Unit of measurement")
+    value: float = Field(..., description="Current sensor value")
+    unit: SensorUnit = Field(..., description="Unit of measurement")
     status: SensorStatus = Field(..., description="Operational status")
 
 
@@ -51,8 +64,8 @@ class SensorUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     type: Optional[SensorType] = None
     location: Optional[str] = Field(None, min_length=1, max_length=100)
-    value: Optional[Union[float, int, bool]] = None
-    unit: Optional[str] = Field(None, min_length=1, max_length=50)
+    value: Optional[float] = None
+    unit: Optional[SensorUnit] = None
     status: Optional[SensorStatus] = None
 
 

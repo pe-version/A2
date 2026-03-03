@@ -19,6 +19,7 @@ __pycache__/
 hardware/
 social-news-feed/
 CONCEPTS_TO_REVIEW.md
+RUBRIC.md
 
 # Database files
 *.db

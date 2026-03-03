@@ -25,7 +25,7 @@ func (h *SensorHandler) ListSensors(c *gin.Context) {
 	sensors, err := h.repo.GetAll()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Error: "Failed to retrieve sensors",
+			Detail: "Failed to retrieve sensors",
 		})
 		return
 	}
@@ -43,14 +43,13 @@ func (h *SensorHandler) GetSensor(c *gin.Context) {
 	sensor, err := h.repo.GetByID(sensorID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Error: "Failed to retrieve sensor",
+			Detail: "Failed to retrieve sensor",
 		})
 		return
 	}
 
 	if sensor == nil {
 		c.JSON(http.StatusNotFound, models.ErrorResponse{
-			Error:  "Sensor not found",
 			Detail: "No sensor with id '" + sensorID + "'",
 		})
 		return
@@ -64,8 +63,7 @@ func (h *SensorHandler) CreateSensor(c *gin.Context) {
 	var input models.SensorCreate
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Error:  "Invalid request body",
-			Detail: err.Error(),
+			Detail: "Invalid request body: " + err.Error(),
 		})
 		return
 	}
@@ -73,7 +71,6 @@ func (h *SensorHandler) CreateSensor(c *gin.Context) {
 	sensor, err := h.repo.Create(&input)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Error:  "Failed to create sensor",
 			Detail: err.Error(),
 		})
 		return
@@ -89,8 +86,7 @@ func (h *SensorHandler) UpdateSensor(c *gin.Context) {
 	var input models.SensorUpdate
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Error:  "Invalid request body",
-			Detail: err.Error(),
+			Detail: "Invalid request body: " + err.Error(),
 		})
 		return
 	}
@@ -98,7 +94,6 @@ func (h *SensorHandler) UpdateSensor(c *gin.Context) {
 	sensor, err := h.repo.Update(sensorID, &input)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Error:  "Failed to update sensor",
 			Detail: err.Error(),
 		})
 		return
@@ -106,7 +101,6 @@ func (h *SensorHandler) UpdateSensor(c *gin.Context) {
 
 	if sensor == nil {
 		c.JSON(http.StatusNotFound, models.ErrorResponse{
-			Error:  "Sensor not found",
 			Detail: "No sensor with id '" + sensorID + "'",
 		})
 		return
@@ -123,13 +117,12 @@ func (h *SensorHandler) DeleteSensor(c *gin.Context) {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, models.ErrorResponse{
-				Error:  "Sensor not found",
 				Detail: "No sensor with id '" + sensorID + "'",
 			})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Error: "Failed to delete sensor",
+			Detail: "Failed to delete sensor",
 		})
 		return
 	}

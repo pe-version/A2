@@ -65,11 +65,6 @@ def seed_from_json(conn: sqlite3.Connection, json_path: str) -> None:
     now = datetime.now(timezone.utc).isoformat()
 
     for sensor in sensors:
-        # Convert boolean values to 0/1 for SQLite
-        value = sensor["value"]
-        if isinstance(value, bool):
-            value = 1.0 if value else 0.0
-
         conn.execute(
             """
             INSERT INTO sensors (id, name, type, location, value, unit, status, last_reading, created_at, updated_at)
@@ -80,7 +75,7 @@ def seed_from_json(conn: sqlite3.Connection, json_path: str) -> None:
                 sensor["name"],
                 sensor["type"],
                 sensor["location"],
-                value,
+                sensor["value"],
                 sensor["unit"],
                 sensor["status"],
                 sensor["last_reading"],

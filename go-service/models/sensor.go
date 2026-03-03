@@ -17,6 +17,18 @@ var ValidSensorTypes = map[string]bool{
 	"pressure":    true,
 }
 
+// ValidSensorUnits contains all allowed units of measurement.
+var ValidSensorUnits = map[string]bool{
+	"fahrenheit": true,
+	"celsius":    true,
+	"boolean":    true,
+	"percent":    true,
+	"aqi":        true,
+	"ppm":        true,
+	"lux":        true,
+	"pascal":     true,
+}
+
 // ValidSensorStatuses contains all allowed sensor statuses.
 var ValidSensorStatuses = map[string]bool{
 	"active":   true,
@@ -53,6 +65,9 @@ func (s *SensorCreate) Validate() error {
 	if !ValidSensorTypes[s.Type] {
 		return fmt.Errorf("invalid sensor type: %s", s.Type)
 	}
+	if !ValidSensorUnits[s.Unit] {
+		return fmt.Errorf("invalid sensor unit: %s", s.Unit)
+	}
 	if !ValidSensorStatuses[s.Status] {
 		return fmt.Errorf("invalid sensor status: %s", s.Status)
 	}
@@ -75,6 +90,9 @@ func (s *SensorUpdate) Validate() error {
 	if s.Type != nil && !ValidSensorTypes[*s.Type] {
 		return fmt.Errorf("invalid sensor type: %s", *s.Type)
 	}
+	if s.Unit != nil && !ValidSensorUnits[*s.Unit] {
+		return fmt.Errorf("invalid sensor unit: %s", *s.Unit)
+	}
 	if s.Status != nil && !ValidSensorStatuses[*s.Status] {
 		return fmt.Errorf("invalid sensor status: %s", *s.Status)
 	}
@@ -93,10 +111,9 @@ type HealthResponse struct {
 	Service string `json:"service"`
 }
 
-// ErrorResponse represents an error response.
+// ErrorResponse represents an error response (RFC 7807 compatible).
 type ErrorResponse struct {
-	Error  string `json:"error"`
-	Detail string `json:"detail,omitempty"`
+	Detail string `json:"detail"`
 }
 
 // Now returns the current UTC time as an ISO 8601 string.
