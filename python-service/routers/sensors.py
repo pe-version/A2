@@ -85,8 +85,8 @@ def update_sensor(
     publisher.publish_sensor_updated(
         sensor_id=updated.id,
         value=updated.value,
-        sensor_type=updated.type,
-        unit=updated.unit,
+        sensor_type=updated.type.value,
+        unit=updated.unit.value,
     )
 
     return updated
