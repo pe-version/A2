@@ -78,9 +78,15 @@ func (r *SQLiteSensorRepository) Create(sensor *models.SensorCreate) (*models.Se
 		return nil, err
 	}
 
-	// Generate new ID
+	// Generate new ID and insert atomically to prevent duplicate IDs under concurrency.
+	tx, err := r.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
 	var maxNum sql.NullInt64
-	err := r.db.QueryRow("SELECT MAX(CAST(SUBSTR(id, 8) AS INTEGER)) FROM sensors WHERE id LIKE 'sensor-%'").Scan(&maxNum)
+	err = tx.QueryRow("SELECT MAX(CAST(SUBSTR(id, 8) AS INTEGER)) FROM sensors WHERE id LIKE 'sensor-%'").Scan(&maxNum)
 	if err != nil {
 		return nil, err
 	}
@@ -93,12 +99,16 @@ func (r *SQLiteSensorRepository) Create(sensor *models.SensorCreate) (*models.Se
 
 	now := models.Now()
 
-	_, err = r.db.Exec(`
+	_, err = tx.Exec(`
 		INSERT INTO sensors (id, name, type, location, value, unit, status, last_reading, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, newID, sensor.Name, sensor.Type, sensor.Location, sensor.Value, sensor.Unit, sensor.Status, now, now, now)
 
 	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 

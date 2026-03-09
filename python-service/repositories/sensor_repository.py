@@ -35,35 +35,32 @@ class SensorRepository:
 
     def create(self, sensor: SensorCreate) -> Sensor:
         """Create a new sensor."""
-        # Generate new ID
-        cursor = self.db.execute("SELECT MAX(CAST(SUBSTR(id, 8) AS INTEGER)) FROM sensors WHERE id LIKE 'sensor-%'")
-        max_num = cursor.fetchone()[0] or 0
-        new_id = f"sensor-{max_num + 1:03d}"
-
         now = datetime.now(timezone.utc).isoformat()
-
-        # Convert value for storage
         value = self._convert_value_for_storage(sensor.value)
 
-        self.db.execute(
-            """
-            INSERT INTO sensors (id, name, type, location, value, unit, status, last_reading, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                new_id,
-                sensor.name,
-                sensor.type.value,
-                sensor.location,
-                value,
-                sensor.unit,
-                sensor.status.value,
-                now,
-                now,
-                now,
-            ),
-        )
-        self.db.commit()
+        # Generate new ID and insert atomically to prevent duplicate IDs under concurrency.
+        with self.db:
+            cursor = self.db.execute("SELECT MAX(CAST(SUBSTR(id, 8) AS INTEGER)) FROM sensors WHERE id LIKE 'sensor-%'")
+            max_num = cursor.fetchone()[0] or 0
+            new_id = f"sensor-{max_num + 1:03d}"
+            self.db.execute(
+                """
+                INSERT INTO sensors (id, name, type, location, value, unit, status, last_reading, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    new_id,
+                    sensor.name,
+                    sensor.type.value,
+                    sensor.location,
+                    value,
+                    sensor.unit,
+                    sensor.status.value,
+                    now,
+                    now,
+                    now,
+                ),
+            )
 
         return self.get_by_id(new_id)
 
