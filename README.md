@@ -319,7 +319,7 @@ When the sensor service is unavailable, rule creation still succeeds with a warn
 
 ## Resilience & Integration Evidence
 
-### Go Alert Service Tests: 24/24 Passing
+### Go Alert Service Tests: 23/23 Passing
 
 ```
 === RUN   TestUnauthorizedWithoutToken        --- PASS (0.04s)
