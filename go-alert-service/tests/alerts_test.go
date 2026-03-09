@@ -710,28 +710,17 @@ func TestUpdateAlertInvalidStatus(t *testing.T) {
 	router, cleanup := setupTestRouter(t)
 	defer cleanup()
 
-	// Directly insert a triggered alert via repository to test handler validation
-	tmpFile, _ := os.CreateTemp("", "test-direct-*.db")
-	tmpFile.Close()
-	db2, _ := database.Connect(tmpFile.Name())
-	defer db2.Close()
-	defer os.Remove(tmpFile.Name())
-	database.InitSchema(db2)
-	alertRepo := repositories.NewSQLiteTriggeredAlertRepository(db2)
-	alert, _ := alertRepo.Create("rule-001", "sensor-001", 85.0, 80.0, "test alert")
-
-	// Now use the main router and try to update with bad status
+	// input.Validate() runs before any DB lookup, so invalid status returns
+	// 400 regardless of whether the alert ID exists.
 	body, _ := json.Marshal(map[string]interface{}{"status": "invalid_status"})
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("PUT", "/alerts/"+alert.ID, bytes.NewBuffer(body))
+	req, _ := http.NewRequest("PUT", "/alerts/alert-any", bytes.NewBuffer(body))
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(w, req)
 
-	// alert-001 won't exist in the test router's DB, so expect 404 — the key is
-	// that it's not a 500, proving the handler handles the request cleanly.
-	if w.Code == http.StatusInternalServerError {
-		t.Errorf("Got unexpected 500: %s", w.Body.String())
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for invalid status, got %d: %s", w.Code, w.Body.String())
 	}
 }
