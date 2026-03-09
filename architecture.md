@@ -4,133 +4,131 @@
 
 ```mermaid
 flowchart TB
-    Client["HTTP Client<br/>(curl, Postman, etc.)"]
+    Client["HTTP Client\n(curl, Postman, etc.)"]
 
     subgraph Docker["Docker Compose Network"]
-        subgraph PythonService["Python Service · FastAPI · :8000"]
-            direction TB
-            PAuth["Auth Middleware"]
-            PLog["Logging Middleware"]
-            PRouter["Routers"]
-            PRepo["Repository Layer"]
-            PAuth --> PLog --> PRouter --> PRepo
+        RabbitMQ["RabbitMQ · :5672\nManagement · :15672"]
+
+        subgraph SensorServices["Sensor Services"]
+            PythonSvc["Python Sensor\nFastAPI · :8000"]
+            GoSvc["Go Sensor\nGin · :8080"]
         end
 
-        subgraph GoService["Go Service · Gin · :8080"]
-            direction TB
-            GAuth["Auth Middleware"]
-            GLog["Logging Middleware"]
-            GHandler["Handlers"]
-            GRepo["Repository Layer"]
-            GAuth --> GLog --> GHandler --> GRepo
+        subgraph AlertServices["Alert Services"]
+            PythonAlert["Python Alert\nFastAPI · :8002"]
+            GoAlert["Go Alert\nGin · :8081"]
         end
 
-        subgraph Storage["Data Storage"]
+        subgraph Storage["Data Storage (per-service SQLite)"]
             PDB[("sensors-python.db")]
             GDB[("sensors-go.db")]
-            Seed["sensors.json"]
+            PAB[("alerts-python.db")]
+            GAB[("alerts-go.db")]
         end
     end
 
-    Client -->|"Bearer token"| PAuth
-    Client -->|"Bearer token"| GAuth
+    Client -->|"Bearer token"| PythonSvc
+    Client -->|"Bearer token"| GoSvc
+    Client -->|"Bearer token"| PythonAlert
+    Client -->|"Bearer token"| GoAlert
 
-    PRepo --> PDB
-    GRepo --> GDB
-    Seed -.->|"seed on startup"| PDB
-    Seed -.->|"seed on startup"| GDB
+    GoSvc  -->|"sensor.updated (fanout)"| RabbitMQ
+    PythonSvc -->|"sensor.updated (fanout)"| RabbitMQ
+    RabbitMQ -->|"alert_service_go queue"| GoAlert
+    RabbitMQ -->|"alert_service_python queue"| PythonAlert
+
+    GoAlert    -->|"GET /sensors/:id\ncircuit breaker + retry"| GoSvc
+    PythonAlert -->|"GET /sensors/:id\nretry + timeout"| PythonSvc
+
+    PythonSvc  --> PDB
+    GoSvc      --> GDB
+    PythonAlert --> PAB
+    GoAlert    --> GAB
 ```
 
 ## ASCII Diagram (for terminals/plain text)
 
 ```
-                         HTTP Client
-                    (curl, Postman, etc.)
-                    │                   │
-                    │ Bearer token      │ Bearer token
-                    ▼                   ▼
-╔═══════════════════════════════════════════════════════╗
-║              DOCKER COMPOSE NETWORK                   ║
-║                                                       ║
-║  ┌─────────────────────┐   ┌─────────────────────┐   ║
-║  │ Python · FastAPI     │   │ Go · Gin            │   ║
-║  │ :8000                │   │ :8080               │   ║
-║  │                      │   │                     │   ║
-║  │  ┌────────────────┐  │   │  ┌────────────────┐ │   ║
-║  │  │ Auth Middleware │  │   │  │ Auth Middleware │ │   ║
-║  │  └───────┬────────┘  │   │  └───────┬────────┘ │   ║
-║  │          ▼           │   │          ▼          │   ║
-║  │  ┌────────────────┐  │   │  ┌────────────────┐ │   ║
-║  │  │ Log Middleware  │  │   │  │ Log Middleware  │ │   ║
-║  │  └───────┬────────┘  │   │  └───────┬────────┘ │   ║
-║  │          ▼           │   │          ▼          │   ║
-║  │  ┌────────────────┐  │   │  ┌────────────────┐ │   ║
-║  │  │ Routers        │  │   │  │ Handlers       │ │   ║
-║  │  └───────┬────────┘  │   │  └───────┬────────┘ │   ║
-║  │          ▼           │   │          ▼          │   ║
-║  │  ┌────────────────┐  │   │  ┌────────────────┐ │   ║
-║  │  │ Repository     │  │   │  │ Repository     │ │   ║
-║  │  └───────┬────────┘  │   │  └───────┬────────┘ │   ║
-║  └──────────┼──────────┘   └──────────┼──────────┘   ║
-║             ▼                         ▼              ║
-║  ┌─────────────────────────────────────────────────┐ ║
-║  │                 DATA STORAGE                     │ ║
-║  │  ┌──────────────┐ ┌────────────┐ ┌───────────┐  │ ║
-║  │  │sensors-python│ │ sensors-go │ │sensors.json│  │ ║
-║  │  │    .db       │ │    .db     │ │ (seed)     │  │ ║
-║  │  └──────────────┘ └────────────┘ └───────────┘  │ ║
-║  └─────────────────────────────────────────────────┘ ║
-╚═══════════════════════════════════════════════════════╝
+                              HTTP Client
+                         (curl, Postman, etc.)
+          ┌───────────────┬───────────────┬───────────────┐
+          │ Bearer token  │ Bearer token  │ Bearer token  │ Bearer token
+          ▼               ▼               ▼               ▼
+╔═════════════════════════════════════════════════════════════════╗
+║                    DOCKER COMPOSE NETWORK                        ║
+║                                                                  ║
+║  ┌──────────────────┐   ┌──────────────────┐                    ║
+║  │ Python Sensor     │   │ Go Sensor         │                    ║
+║  │ FastAPI · :8000   │   │ Gin · :8080       │                    ║
+║  │  EventPublisher ──┼───┼──────────────────────────────────┐   ║
+║  └────────┬──────────┘   └────────┬──────────┘              │   ║
+║           ▼                       ▼                          ▼   ║
+║  ┌──────────────┐     ┌──────────────┐     ┌─────────────────┐  ║
+║  │sensors-python│     │ sensors-go   │     │   RabbitMQ      │  ║
+║  │    .db       │     │    .db       │     │ sensor_events   │  ║
+║  └──────────────┘     └──────────────┘     │   (fanout)      │  ║
+║                                            └────────┬────────┘  ║
+║                                 ┌───────────────────┘           ║
+║                                 ▼                               ║
+║  ┌──────────────────┐   ┌──────────────────┐                    ║
+║  │ Python Alert      │   │ Go Alert          │                    ║
+║  │ FastAPI · :8002   │   │ Gin · :8081       │                    ║
+║  │  Consumer(async)  │   │  Consumer(async)  │                    ║
+║  │  SensorClient─────────────────────────► Go Sensor (CB)        ║
+║  └────────┬──────────┘   └────────┬──────────┘                    ║
+║           ▼                       ▼                               ║
+║  ┌──────────────┐     ┌──────────────┐                            ║
+║  │alerts-python │     │  alerts-go   │                            ║
+║  │    .db       │     │    .db       │                            ║
+║  └──────────────┘     └──────────────┘                            ║
+╚═════════════════════════════════════════════════════════════════╝
 ```
 
 ## Key Components
 
 | Component | Description |
 |-----------|-------------|
-| **Docker Compose Network** | Isolates services; all requests require Bearer token |
-| **Auth Middleware** | Validates `Authorization: Bearer <token>` header on every request |
-| **Logging Middleware** | Adds correlation ID (`X-Correlation-ID`) for request tracing |
-| **Routers/Handlers** | Route definitions and business logic for CRUD operations |
-| **Repository Layer** | Data access abstraction (injected via DI) |
-| **SQLite Databases** | Separate database per service to avoid conflicts |
-| **Seed Data** | `sensors.json` loaded on startup if database is empty |
+| **RabbitMQ fanout exchange** | `sensor_events` exchange; each alert service binds its own durable queue |
+| **EventPublisher** | Publishes `sensor.updated` on every `PUT /sensors/:id`; tolerates RabbitMQ unavailability |
+| **AlertConsumer** | Background goroutine consuming sensor events; auto-reconnects on disconnect |
+| **AlertEvaluator** | Evaluates sensor value against active rules; creates `triggered_alert` records |
+| **SensorClient** | HTTP client with circuit breaker (gobreaker) + retry + 2s timeout |
+| **Auth Middleware** | Bearer token validation on all protected endpoints |
+| **Logging Middleware** | `X-Correlation-ID` propagation and structured request logging |
+| **SQLite (per-service)** | Each service owns its own database; no cross-service joins |
 
-## Request Flow
+## Async Flow: Sensor Update → Alert
 
-The sequence diagram below shows how a typical authenticated request flows through the middleware chain. Both services follow this identical pattern.
-
-```mermaid
-sequenceDiagram
-    actor Client
-    participant Auth as Auth Middleware
-    participant Log as Logging Middleware
-    participant Router as Router / Handler
-    participant Repo as Repository
-    participant DB as SQLite
-
-    Client->>+Auth: GET /sensors<br/>Authorization: Bearer <token>
-    Auth->>Auth: Validate token
-    alt Invalid or missing token
-        Auth-->>Client: 401 Unauthorized
-    end
-    Auth->>+Log: Forward request
-    Log->>Log: Generate correlation ID
-    Log->>+Router: Forward request
-    Router->>+Repo: GetAll()
-    Repo->>+DB: SELECT * FROM sensors
-    DB-->>-Repo: rows
-    Repo-->>-Router: []Sensor
-    Router-->>-Log: 200 OK + JSON
-    Log->>Log: Log request + duration
-    Log-->>-Auth: Response
-    Auth-->>-Client: 200 OK + JSON body
+```
+PUT /sensors/:id
+      │
+      ▼ (sync: returns 200 immediately)
+Update sensor DB
+      │
+      ▼ (async: goroutine)
+Publish sensor.updated to RabbitMQ fanout
+      │
+      └──► alert_service_go queue ──► AlertConsumer ──► AlertEvaluator
+                                                              │
+                                                              ├── Load active rules for sensor
+                                                              ├── Compare value OP threshold
+                                                              └── INSERT triggered_alert if crossed
 ```
 
-### Steps
+## Sync Flow: Create Alert Rule (with Circuit Breaker)
 
-1. Client sends HTTP request with `Authorization: Bearer <token>` header
-2. Auth Middleware validates token → returns 401 if invalid
-3. Logging Middleware generates/extracts correlation ID, logs request
-4. Router/Handler processes request, calls Repository
-5. Repository executes SQL against SQLite database
-6. Response returned with correlation ID in logs
+```
+POST /rules {sensor_id: "sensor-001", ...}
+      │
+      ▼
+AlertRuleHandler.CreateRule
+      │
+      ▼
+SensorClient.GetSensor("sensor-001")
+      │
+      ├── Circuit CLOSED ──► HTTP GET /sensors/sensor-001 (up to 3 retries, 2s timeout)
+      │        ├── 200 OK  ──► create rule ──► 201 Created
+      │        └── 404     ──► reject ──► 400 Bad Request
+      │
+      └── Circuit OPEN (service down) ──► fallback: create rule + warning ──► 201 Created
+```

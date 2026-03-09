@@ -14,6 +14,7 @@ type Config struct {
 	LogLevel     string
 	LogFormat    string
 	SeedDataPath string
+	RabbitMQURL  string
 }
 
 // Load reads configuration from environment variables.
@@ -35,6 +36,7 @@ func Load() (*Config, error) {
 		LogLevel:     getEnv("LOG_LEVEL", "INFO"),
 		LogFormat:    getEnv("LOG_FORMAT", "json"),
 		SeedDataPath: getEnv("SEED_DATA_PATH", "/app/data/sensors.json"),
+		RabbitMQURL:  getEnv("RABBITMQ_URL", "amqp://iot_service:iot_secret@rabbitmq:5672/"),
 	}, nil
 }
 

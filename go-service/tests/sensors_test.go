@@ -46,7 +46,7 @@ func setupTestRouter(t *testing.T) (*gin.Engine, func()) {
 	// Create repository and handlers
 	sensorRepo := repositories.NewSQLiteSensorRepository(db)
 	healthHandler := handlers.NewHealthHandler()
-	sensorHandler := handlers.NewSensorHandler(sensorRepo)
+	sensorHandler := handlers.NewSensorHandler(sensorRepo, nil)
 
 	// Set up router
 	gin.SetMode(gin.TestMode)

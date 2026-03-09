@@ -9,15 +9,24 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from config import get_settings
 from database import init_database
+from messaging.publisher import EventPublisher
 from middleware.logging import LoggingMiddleware
 from routers import health_router, sensors_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize database on startup."""
+    """Initialize database and RabbitMQ publisher on startup."""
     init_database()
+
+    # Create and connect event publisher for sensor update events
+    settings = get_settings()
+    publisher = EventPublisher(settings.rabbitmq_url)
+    publisher.connect()
+    app.state.publisher = publisher
+
     yield
 
 

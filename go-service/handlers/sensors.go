@@ -6,18 +6,20 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"iot-sensor-service/messaging"
 	"iot-sensor-service/models"
 	"iot-sensor-service/repositories"
 )
 
 // SensorHandler handles sensor CRUD operations.
 type SensorHandler struct {
-	repo repositories.SensorRepository
+	repo      repositories.SensorRepository
+	publisher *messaging.EventPublisher
 }
 
-// NewSensorHandler creates a new sensor handler with the given repository.
-func NewSensorHandler(repo repositories.SensorRepository) *SensorHandler {
-	return &SensorHandler{repo: repo}
+// NewSensorHandler creates a new sensor handler with the given repository and event publisher.
+func NewSensorHandler(repo repositories.SensorRepository, publisher *messaging.EventPublisher) *SensorHandler {
+	return &SensorHandler{repo: repo, publisher: publisher}
 }
 
 // ListSensors returns all sensors.
@@ -104,6 +106,11 @@ func (h *SensorHandler) UpdateSensor(c *gin.Context) {
 			Detail: "No sensor with id '" + sensorID + "'",
 		})
 		return
+	}
+
+	// Publish sensor.updated event for alert services to consume
+	if h.publisher != nil {
+		go h.publisher.PublishSensorUpdated(sensor.ID, sensor.Value, sensor.Type, sensor.Unit)
 	}
 
 	c.JSON(http.StatusOK, sensor)

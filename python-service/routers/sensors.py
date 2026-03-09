@@ -1,6 +1,6 @@
 """Sensor CRUD endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from middleware.auth import verify_token
 from models.sensor import Sensor, SensorCreate, SensorList, SensorUpdate
@@ -62,6 +62,7 @@ def create_sensor(
 def update_sensor(
     sensor_id: str,
     updates: SensorUpdate,
+    request: Request,
     repo: SensorRepository = Depends(get_sensor_repository),
     _: str = Depends(verify_token),
 ):
@@ -69,6 +70,7 @@ def update_sensor(
     Update an existing sensor.
 
     Only the provided fields will be updated.
+    Publishes a sensor.updated event to RabbitMQ on success.
     Returns 404 if the sensor doesn't exist.
     """
     updated = repo.update(sensor_id, updates)
@@ -77,6 +79,16 @@ def update_sensor(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No sensor with id '{sensor_id}'",
         )
+
+    # Publish sensor.updated event to RabbitMQ
+    publisher = request.app.state.publisher
+    publisher.publish_sensor_updated(
+        sensor_id=updated.id,
+        value=updated.value,
+        sensor_type=updated.type,
+        unit=updated.unit,
+    )
+
     return updated
 
 

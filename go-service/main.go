@@ -16,6 +16,7 @@ import (
 	"iot-sensor-service/config"
 	"iot-sensor-service/database"
 	"iot-sensor-service/handlers"
+	"iot-sensor-service/messaging"
 	"iot-sensor-service/middleware"
 	"iot-sensor-service/repositories"
 )
@@ -51,9 +52,12 @@ func main() {
 	// Create repository
 	sensorRepo := repositories.NewSQLiteSensorRepository(db)
 
+	// Create event publisher (connects to RabbitMQ; tolerates unavailability)
+	publisher := messaging.NewEventPublisher(cfg.RabbitMQURL)
+
 	// Create handlers
 	healthHandler := handlers.NewHealthHandler()
-	sensorHandler := handlers.NewSensorHandler(sensorRepo)
+	sensorHandler := handlers.NewSensorHandler(sensorRepo, publisher)
 
 	// Set up router
 	gin.SetMode(gin.ReleaseMode)
