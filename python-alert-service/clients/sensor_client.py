@@ -1,20 +1,33 @@
 """Sensor service client with circuit breaker and retry logic."""
 
 import logging
+import time
 
 import httpx
 import pybreaker
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger("alert_service")
+
+
+class _LogListener(pybreaker.CircuitBreakerListener):
+    """Logs circuit breaker state transitions."""
+
+    def state_change(self, cb, old_state, new_state):
+        logger.warning(
+            "Circuit breaker state changed name=%s from=%s to=%s",
+            cb.name,
+            str(old_state),
+            str(new_state),
+        )
 
 
 class SensorClient:
     """HTTP client for the sensor service with resilience patterns.
 
-    Uses a circuit breaker (pybreaker) to prevent cascade failures and
-    tenacity for retry with exponential backoff. Falls back gracefully
-    when the sensor service is unavailable.
+    Uses a circuit breaker (pybreaker) to prevent cascade failures.
+    Retry with exponential backoff is applied *inside* the circuit breaker
+    call so the entire retry sequence counts as one failure toward fail_max.
+    Falls back gracefully when the sensor service is unavailable.
     """
 
     def __init__(
@@ -30,25 +43,40 @@ class SensorClient:
             fail_max=cb_fail_max,
             reset_timeout=cb_reset_timeout,
             name="sensor-service",
+            listeners=[_LogListener()],
         )
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=4))
-    def _make_request(self, sensor_id: str) -> dict | None:
-        """Make HTTP request to sensor service with retry logic.
+    def _make_request_with_retry(self, sensor_id: str, max_retries: int = 3) -> dict | None:
+        """Make HTTP request with retry and exponential backoff.
 
-        Retries up to 3 times with exponential backoff:
-        multiplier * 2^(attempt-1), so 1s, 2s, 4s with multiplier=1.
-        Timeout per request is 2 seconds.
+        Runs inside the circuit breaker call so the full retry sequence
+        counts as one attempt toward fail_max. Backoff: 1s, 2s between attempts.
+        Timeout per request: 2 seconds.
         """
-        response = httpx.get(
-            f"{self.base_url}/sensors/{sensor_id}",
-            headers={"Authorization": f"Bearer {self.api_token}"},
-            timeout=2.0,
-        )
-        if response.status_code == 404:
-            return None
-        response.raise_for_status()
-        return response.json()
+        last_err: Exception | None = None
+        for attempt in range(max_retries):
+            if attempt > 0:
+                backoff = 2 ** (attempt - 1)  # 1s, 2s
+                time.sleep(backoff)
+            try:
+                response = httpx.get(
+                    f"{self.base_url}/sensors/{sensor_id}",
+                    headers={"Authorization": f"Bearer {self.api_token}"},
+                    timeout=2.0,
+                )
+                if response.status_code == 404:
+                    return None
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                last_err = e
+                logger.warning(
+                    "Sensor service request failed, retrying sensor_id=%s attempt=%d error=%s",
+                    sensor_id,
+                    attempt + 1,
+                    str(e),
+                )
+        raise last_err
 
     def get_sensor(self, sensor_id: str) -> tuple[dict | None, bool]:
         """Get sensor data via circuit breaker.
@@ -60,18 +88,18 @@ class SensorClient:
             - (None, False): Sensor service unavailable — fallback, not validated
         """
         try:
-            result = self.breaker.call(self._make_request, sensor_id)
+            result = self.breaker.call(self._make_request_with_retry, sensor_id)
             return result, True
         except pybreaker.CircuitBreakerError:
             logger.warning(
-                "Circuit breaker is OPEN — sensor service unavailable",
-                extra={"sensor_id": sensor_id, "breaker_state": "open"},
+                "Circuit breaker is OPEN — sensor service unavailable sensor_id=%s",
+                sensor_id,
             )
             return None, False
         except Exception as e:
             logger.warning(
-                "Sensor service request failed: %s",
+                "Sensor service unavailable sensor_id=%s error=%s",
+                sensor_id,
                 str(e),
-                extra={"sensor_id": sensor_id},
             )
             return None, False
