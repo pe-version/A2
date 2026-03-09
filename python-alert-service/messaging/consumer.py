@@ -55,10 +55,12 @@ class AlertConsumer:
 
         logger.info("Connected to RabbitMQ, waiting for sensor events")
 
+        # auto_ack=False: ack only after successful processing so messages are
+        # not lost if the evaluator crashes mid-flight.
         channel.basic_consume(
             queue="alert_service_python",
             on_message_callback=self._on_message,
-            auto_ack=True,
+            auto_ack=False,
         )
         channel.start_consuming()
 
@@ -72,5 +74,9 @@ class AlertConsumer:
                     extra={"sensor_id": event.get("sensor_id"), "value": event.get("value")},
                 )
                 self.callback(event)
+            # Ack after successful processing (including unknown event types).
+            ch.basic_ack(delivery_tag=method.delivery_tag)
         except json.JSONDecodeError:
             logger.warning("Received invalid JSON message")
+            # Nack without requeue — malformed messages cannot be retried usefully.
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)

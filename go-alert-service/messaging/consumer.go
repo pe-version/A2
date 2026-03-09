@@ -73,7 +73,9 @@ func (c *AlertConsumer) consume() error {
 		return err
 	}
 
-	msgs, err := ch.Consume(q.Name, "", true, false, false, false, nil)
+	// autoAck=false: ack only after successful processing so messages are
+	// not lost if the evaluator crashes mid-flight.
+	msgs, err := ch.Consume(q.Name, "", false, false, false, false, nil)
 	if err != nil {
 		return err
 	}
@@ -84,6 +86,8 @@ func (c *AlertConsumer) consume() error {
 		var event SensorEvent
 		if err := json.Unmarshal(msg.Body, &event); err != nil {
 			slog.Warn("Received invalid JSON message", "error", err.Error())
+			// Nack without requeue — malformed messages cannot be retried usefully.
+			msg.Nack(false, false)
 			continue
 		}
 		if event.Event == "sensor.updated" {
@@ -91,6 +95,7 @@ func (c *AlertConsumer) consume() error {
 				"sensor_id", event.SensorID, "value", event.Value)
 			c.callback(event)
 		}
+		msg.Ack(false)
 	}
 
 	return nil
