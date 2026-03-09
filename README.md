@@ -13,6 +13,8 @@ This assignment evolves the A1 IoT Sensor Service into a multi-service architect
 
 ## Architecture
 
+![Architecture Diagram](diagrams/architecture.png)
+
 ```mermaid
 flowchart TB
     Client["HTTP Client\n(curl, Postman, etc.)"]
@@ -61,6 +63,8 @@ flowchart TB
 
 This is the critical async flow. A client updates a sensor value; the sensor service publishes an event; the alert service evaluates it against active rules.
 
+![Async Flow Sequence Diagram](diagrams/sequence-async-flow.png)
+
 ```mermaid
 sequenceDiagram
     actor Client
@@ -92,6 +96,8 @@ sequenceDiagram
 ## Resilience: Circuit Breaker Flow
 
 When the alert service creates a rule, it validates the sensor exists via HTTP with circuit breaker protection:
+
+![Circuit Breaker Sequence Diagram](diagrams/sequence-circuit-breaker.png)
 
 ```mermaid
 sequenceDiagram
