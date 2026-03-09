@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,6 +10,7 @@ from fastapi.testclient import TestClient
 # Set test environment variables before importing app
 TEST_TOKEN = "test-secret-token"
 os.environ["API_TOKEN"] = TEST_TOKEN
+os.environ["RABBITMQ_URL"] = "amqp://localhost/"  # won't be used (mocked)
 
 
 @pytest.fixture(scope="function")
@@ -26,7 +28,7 @@ def temp_db():
 
 @pytest.fixture(scope="function")
 def client(temp_db):
-    """Create a test client with a fresh database."""
+    """Create a test client with a fresh database. RabbitMQ is mocked."""
     # Import app after setting environment variables
     from main import app
 
@@ -34,8 +36,12 @@ def client(temp_db):
     from config import get_settings
     get_settings.cache_clear()
 
-    with TestClient(app) as test_client:
-        yield test_client
+    mock_publisher = MagicMock()
+    mock_publisher.publish_sensor_updated = MagicMock()
+
+    with patch("main.EventPublisher", return_value=mock_publisher):
+        with TestClient(app) as test_client:
+            yield test_client
 
 
 @pytest.fixture

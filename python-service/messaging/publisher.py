@@ -22,14 +22,25 @@ class EventPublisher:
         self._channel = None
 
     def connect(self):
-        """Establish connection to RabbitMQ and declare the exchange."""
-        params = pika.URLParameters(self.rabbitmq_url)
-        self._connection = pika.BlockingConnection(params)
-        self._channel = self._connection.channel()
-        self._channel.exchange_declare(
-            exchange="sensor_events", exchange_type="fanout", durable=True
-        )
-        logger.info("Connected to RabbitMQ for publishing")
+        """Establish connection to RabbitMQ and declare the exchange.
+
+        Tolerates failure — logs a warning and leaves the connection as None
+        so publish_sensor_updated can retry on the next call.
+        """
+        try:
+            params = pika.URLParameters(self.rabbitmq_url)
+            self._connection = pika.BlockingConnection(params)
+            self._channel = self._connection.channel()
+            self._channel.exchange_declare(
+                exchange="sensor_events", exchange_type="fanout", durable=True
+            )
+            logger.info("Connected to RabbitMQ for publishing")
+        except Exception as e:
+            logger.warning(
+                "RabbitMQ not available at startup — will retry on first publish: %s", str(e)
+            )
+            self._connection = None
+            self._channel = None
 
     def publish_sensor_updated(
         self, sensor_id: str, value: float, sensor_type: str, unit: str
