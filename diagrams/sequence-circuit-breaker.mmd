@@ -18,8 +18,14 @@ sequenceDiagram
         GoSvc-->>-CB: 404 Not Found
         CB-->>GoAlert: not found error
         GoAlert-->>Client: 400 Bad Request "Sensor not found"
-    else Sensor service down (circuit OPEN)
-        CB-->>GoAlert: fallback (no network call)
+    else Sensor service down → circuit trips OPEN
+        loop Retry with backoff (up to 3 attempts, 1s / 2s delays)
+            CB->>GoSvc: GET /sensors/sensor-001
+            GoSvc--xCB: connection refused (timeout)
+            Note over CB: failure count +1
+        end
+        Note over CB: ConsecutiveFailures >= fail_max → OPEN
+        CB-->>GoAlert: CircuitBreakerError (no further network calls)
         GoAlert->>GoAlert: Create rule with warning
         GoAlert-->>Client: 201 Created {rule, warning}
     end
